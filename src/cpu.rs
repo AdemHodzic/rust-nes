@@ -11,6 +11,7 @@ mod cpu_constants {
     pub const STA_ZP: u8 = 0x85;
 
     pub const TAX: u8 = 0xAA;
+    pub const TAY: u8 = 0xA8;
     pub const INX: u8 = 0xE8;
     pub const BRK: u8 = 0x00;
 }
@@ -18,7 +19,6 @@ mod cpu_constants {
 
 pub mod cpu {
 
-    use crate::cpu::cpu_constants::*;
 
     pub struct CPU {
         pub register_a: u8,
@@ -44,6 +44,76 @@ pub mod cpu {
         NoneAddressing,
     }
     
+    pub struct OpCode {
+        pub opcode: u8,
+        pub name: &'static str,
+        pub takes_bytes: u16,
+        pub takes_cycles: u16,
+        pub adressing_mode: AddressingMode
+    }
+
+    impl OpCode {
+        pub fn new(
+            opcode: u8,
+            name: &'static str,
+            takes_bytes: u16,
+            takes_cycles: u16,
+            adressing_mode: AddressingMode
+        ) -> Self {
+            OpCode {
+                opcode: opcode,
+                name: name,
+                takes_bytes: takes_bytes,
+                takes_cycles: takes_cycles,
+                adressing_mode: adressing_mode,
+            }
+        }
+    }
+
+    lazy_static! {
+        pub static ref OPCODES: Vec<OpCode> = vec![
+            // LDA
+            OpCode::new(0xA9, "LDA", 2,2,AddressingMode::Immediate),
+            OpCode::new(0xA5, "LDA", 2,3,AddressingMode::ZeroPage),
+            OpCode::new(0xB5, "LDA", 2,4,AddressingMode::ZeroPage_X),
+            OpCode::new(0xAD, "LDA", 2,4,AddressingMode::Absolute),
+            OpCode::new(0xBD, "LDA", 2,4,AddressingMode::Absolute_X),
+            OpCode::new(0xB9, "LDA", 2,4,AddressingMode::Absolute_Y),
+            OpCode::new(0xA1, "LDA", 2,6,AddressingMode::Indirect_X),
+            OpCode::new(0xB1, "LDA", 2,5,AddressingMode::Indirect_Y),
+
+            // STA
+            OpCode::new(0x85, "STA", 2,3,AddressingMode::ZeroPage),
+            OpCode::new(0x95, "STA", 2,4,AddressingMode::ZeroPage_X),
+            OpCode::new(0x8D, "STA", 3,4,AddressingMode::Absolute),
+            OpCode::new(0x9D, "STA", 3,5,AddressingMode::Absolute_X),
+            OpCode::new(0x99, "STA", 3,5,AddressingMode::Absolute_Y),
+            OpCode::new(0x81, "STA", 2,6,AddressingMode::Indirect_X),
+            OpCode::new(0x91, "STA", 2,6,AddressingMode::Indirect_Y),
+
+            // TAX
+            OpCode::new(0xAA, "TAX", 1,2,AddressingMode::NoneAddressing),
+            // TAY
+            OpCode::new(0xA8, "TAY", 1,2,AddressingMode::NoneAddressing),
+            
+            //INX
+            OpCode::new(0xE8, "INX", 1,2,AddressingMode::NoneAddressing),
+            //BRK
+            OpCode::new(0x00, "BRK", 1,7,AddressingMode::NoneAddressing),
+            
+        ];
+    }
+    
+    pub fn find_opcode_by_instruction(instruction: u8) -> Option<&'static OpCode> {
+        for opcode in OPCODES.iter() {
+            if opcode.opcode == instruction {
+                return Some(opcode);
+            }
+        }
+
+        None
+    }
+
     impl CPU {
         pub fn new() -> Self {
             CPU {
@@ -176,6 +246,11 @@ pub mod cpu {
             self.register_x = self.register_a;
             self.update_zero_and_negative_flags(self.register_x);
         }
+        fn tay(&mut self) {
+            self.register_y = self.register_a;
+            self.update_zero_and_negative_flags(self.register_x);
+        }
+        
 
 
         fn inx(&mut self) {
@@ -200,60 +275,32 @@ pub mod cpu {
         pub fn run(&mut self) {
 
             loop {
-                let opscode = self.mem_read(self.program_counter);
+                let instruction = self.mem_read(self.program_counter);
+                let op_code = find_opcode_by_instruction(instruction).unwrap();
                 self.program_counter += 1;
+                
 
-                match opscode {
+                match op_code.name  {
                     // LDA
-                    LDA_IMMEDIATE => {
-                        self.lda(&AddressingMode::Immediate);
-                        self.program_counter += 1;
+                    "LDA" => {
+                        self.lda(&op_code.adressing_mode);
+                        self.program_counter += op_code.takes_bytes - 1;
                     }
-                    LDA_ZP => {
-                        self.lda(&AddressingMode::ZeroPage);
-                        self.program_counter += 1;
-                    }
-                    LDA_ZPX => {
-                        self.lda(&AddressingMode::ZeroPage_X);
-                        self.program_counter += 1; 
-                    }
-                    LDA_ABS => {
-                        self.lda(&AddressingMode::Absolute);
-                        self.program_counter += 2; 
-                        
-                    }
-                    LDA_ABSX => {
-                        self.lda(&AddressingMode::Absolute_X);
-                        self.program_counter += 2; 
-                    
-                    }
-                    LDA_ABSY => {
-                        self.lda(&AddressingMode::Absolute_Y);
-                        self.program_counter += 2; 
-                    
-                    }
-                    LDA_INDX => {
-                        self.lda(&AddressingMode::Indirect_X);
-                        self.program_counter += 1; 
-                    }
-                    LDA_INDY => {
-                        self.lda(&AddressingMode::Indirect_Y);
-                        self.program_counter += 1; 
-                    }
-
                     // STA
-                    STA_ZP => {
-                        self.sta(&AddressingMode::ZeroPage);
-                        self.program_counter += 1;
+                    "STA" => {
+                        self.sta(&op_code.adressing_mode);
+                        self.program_counter += op_code.takes_bytes - 1;
                     }
-
-                    TAX => {
+                    "TAX" => {
                         self.tax()
                     }
-                    INX => {
+                    "TAY" => {
+                        self.tay()
+                    }
+                    "INX" => {
                         self.inx()
                     }
-                    BRK => {
+                    "BRK" => {
                         return;
                     }
                     _ => todo!()
@@ -270,6 +317,16 @@ pub mod cpu {
 mod test {
    use crate::cpu::{cpu::*, cpu_constants::*};
  
+    fn endify(lo: u8, hi: u8) -> u16 {
+        ((hi << 8 ) | lo) as u16
+    }
+
+    fn dendify(bit: u16) -> (u8, u8) {
+        let hi = (bit >> 8) as u8;
+        let lo = (bit & 0xff) as u8;
+        (lo, hi)
+    }
+
    #[test]
    fn test_0xa9_lda_immediate_load_data() {
        let mut cpu = CPU::new();
@@ -287,12 +344,59 @@ mod test {
     }
 
     #[test]
-    fn test_lda_from_memory() {
+    fn test_lda_zero_page_from_memory() {
         let mut cpu = CPU::new();
         cpu.mem_write(0x10, 0x55);
  
-        cpu.load_and_run(vec![0xa5, 0x10, 0x00]);
+        cpu.load_and_run(vec![LDA_ZP, 0x10, BRK]);
  
+        assert_eq!(cpu.register_a, 0x55);
+    }
+
+
+    #[test]
+    fn test_lda_zero_page_x_from_memory() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x10 + 0x0F, 0x55);
+ 
+        cpu.load_and_run(vec![LDA_IMMEDIATE, 0x0F, TAX, LDA_ZPX, 0x10, BRK]);
+
+        assert_eq!(cpu.register_a, 0x55);
+    }
+
+    #[test]
+    fn test_lda_absolute() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAAAA, 0x55);
+ 
+        let (lo, hi) = dendify(0xAAAA);
+
+        cpu.load_and_run(vec![LDA_ABS, lo, hi, BRK]);
+
+        assert_eq!(cpu.register_a, 0x55);
+    }
+
+    #[test]
+    fn test_lda_absolute_x() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAAAA + 0x80, 0x55);
+ 
+        let (lo, hi) = dendify(0xAAAA);
+
+        cpu.load_and_run(vec![LDA_IMMEDIATE, 0x80, TAX, LDA_ABSX, lo, hi, BRK]);
+
+        assert_eq!(cpu.register_a, 0x55);
+    }
+
+    #[test]
+    fn test_lda_absolute_y() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAAAA + 0x80, 0x55);
+ 
+        let (lo, hi) = dendify(0xAAAA);
+
+        cpu.load_and_run(vec![LDA_IMMEDIATE, 0x80, TAY, LDA_ABSY, lo, hi, BRK]);
+
         assert_eq!(cpu.register_a, 0x55);
     }
 
